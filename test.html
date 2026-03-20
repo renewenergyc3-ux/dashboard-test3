@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PEA Data Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --pea-purple: #6c2d91;
+            --pea-light-purple: #9b51e0;
+            --pea-gold: #ffc107;
+            --bg-light: #f4f7f6;
+            --white: #ffffff;
+        }
+
+        body {
+            font-family: 'Sarabun', sans-serif;
+            background-color: var(--bg-light);
+            margin: 0;
+            color: #333;
+        }
+
+        /* Header Style */
+        .header {
+            background-color: var(--white);
+            padding: 15px 30px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-bottom: 5px solid var(--pea-purple);
+        }
+
+        .header-logo {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .header-logo img {
+            height: 50px;
+        }
+
+        .header-title h1 {
+            margin: 0;
+            font-size: 1.4rem;
+            color: var(--pea-purple);
+        }
+
+        /* Main Layout */
+        .container {
+            max-width: 1200px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 25px;
+        }
+
+        @media (max-width: 768px) {
+            .dashboard-grid { grid-template-columns: 1fr; }
+        }
+
+        /* Card Style */
+        .card {
+            background: var(--white);
+            border-radius: 16px;
+            padding: 25px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.05);
+            transition: 0.3s;
+        }
+
+        .card:hover { transform: translateY(-5px); }
+
+        .card-title {
+            font-weight: 600;
+            font-size: 1.1rem;
+            margin-bottom: 20px;
+            color: var(--pea-purple);
+            border-left: 4px solid var(--pea-gold);
+            padding-left: 10px;
+        }
+
+        /* Loading State */
+        #loading {
+            text-align: center;
+            padding: 50px;
+            font-size: 1.2rem;
+            color: var(--pea-purple);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        th {
+            background-color: var(--pea-purple);
+            color: white;
+            text-align: left;
+            padding: 12px;
+            font-weight: 400;
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+        }
+    </style>
+</head>
+<body>
+
+    <header class="header">
+        <div class="header-logo">
+            <img src="https://www.pea.co.th/Portals/0/logo_pea.png" alt="PEA Logo">
+            <div class="header-title">
+                <h1>ระบบรายงานข้อมูล Dashboard (PEA Theme)</h1>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <div id="loading">กำลังดึงข้อมูลจาก Google Sheets...</div>
+        
+        <div class="dashboard-grid" id="dashboard-content" style="display: none;">
+            <div class="card">
+                <div class="card-title">สรุปสัดส่วนข้อมูล</div>
+                <canvas id="myPieChart"></canvas>
+            </div>
+
+            <div class="card">
+                <div class="card-title">รายการข้อมูลล่าสุด</div>
+                <div style="overflow-x: auto;">
+                    <table id="data-table">
+                        <thead>
+                            <tr id="table-header"></tr>
+                        </thead>
+                        <tbody id="table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ใส่ URL ของ Google Sheet ที่เผยแพร่แล้ว (ใช้ Visualization API endpoint)
+        const sheetId = '15SClvSIvKz9o06xrxUkeenAAXSvjn4SRo9Dyx8GCRY0';
+        const query = encodeURIComponent('SELECT *');
+        const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tq=${query}`;
+
+        fetch(url)
+            .then(res => res.text())
+            .then(data => {
+                // ตัดส่วนหัวข้อของ JSON ที่ Google ส่งกลับมาออก
+                const jsonData = JSON.parse(data.substring(47).slice(0, -2));
+                renderDashboard(jsonData.table);
+            })
+            .catch(err => {
+                document.getElementById('loading').innerText = "เกิดข้อผิดพลาดในการโหลดข้อมูล";
+                console.error(err);
+            });
+
+        function renderDashboard(table) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('dashboard-content').style.display = 'grid';
+
+            const rows = table.rows;
+            const cols = table.cols;
+
+            // 1. สร้างตารางข้อมูล
+            const headerRow = document.getElementById('table-header');
+            cols.forEach(col => {
+                let th = document.createElement('th');
+                th.innerText = col.label || 'ข้อมูล';
+                headerRow.appendChild(th);
+            });
+
+            const tbody = document.getElementById('table-body');
+            rows.slice(0, 10).forEach(rowData => { // แสดงแค่ 10 แถวแรกเป็นตัวอย่าง
+                let tr = document.createElement('tr');
+                rowData.c.forEach(cell => {
+                    let td = document.createElement('td');
+                    td.innerText = cell ? cell.v : '';
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+
+            // 2. ประมวลผลข้อมูลสำหรับ Pie Chart (นับจำนวนหมวดหมู่ใน Column ที่ 2 เป็นตัวอย่าง)
+            const categories = {};
+            rows.forEach(r => {
+                const val = r.c[1] ? r.c[1].v : 'อื่นๆ'; // เปลี่ยนเลข 1 เป็น Column ที่ต้องการจัดกลุ่ม
+                categories[val] = (categories[val] || 0) + 1;
+            });
+
+            // 3. สร้างกราฟวงกลม
+            const ctx = document.getElementById('myPieChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'doughnut', // ใช้ Doughnut เพื่อความทันสมัย
+                data: {
+                    labels: Object.keys(categories),
+                    datasets: [{
+                        data: Object.values(categories),
+                        backgroundColor: [
+                            '#6c2d91', '#9b51e0', '#ffc107', '#2ecc71', '#3498db'
+                        ],
+                        borderWidth: 2,
+                        hoverOffset: 10
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'bottom' }
+                    },
+                    cutout: '70%' // เจาะรูตรงกลางให้ดูสวยแบบ Dashboard สมัยใหม่
+                }
+            });
+        }
+    </script>
+</body>
+</html>
